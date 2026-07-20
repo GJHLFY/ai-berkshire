@@ -22,6 +22,7 @@ Requires Python >= 3.7.
 """
 
 import argparse
+import io
 import json
 import math
 import os
@@ -31,6 +32,53 @@ from decimal import Decimal, Context, ROUND_HALF_EVEN
 from random import Random
 
 _CTX = Context(prec=28, rounding=ROUND_HALF_EVEN)
+
+# ---------------------------------------------------------------------------
+# Console-safe output for Windows GBK terminals
+# ---------------------------------------------------------------------------
+
+_try_utf8 = True
+
+
+def _sym(unicode_char: str, ascii_fallback: str) -> str:
+    """Return Unicode symbol if terminal supports it, else ASCII fallback.
+
+    Detects encoding on first call, then caches the decision.
+    """
+    global _try_utf8
+    if _try_utf8 is True:
+        try:
+            # Try reconfiguring stdout to UTF-8 (Python 3.7+)
+            if hasattr(sys.stdout, 'reconfigure'):
+                sys.stdout.reconfigure(encoding='utf-8')
+            # Also set PYTHONIOENCODING equivalent for subprocess safety
+            _try_utf8 = False
+        except (AttributeError, ValueError, OSError):
+            _try_utf8 = False
+    return unicode_char
+
+
+def _p(*args, **kwargs):
+    """Print with fallback for terminals that cannot encode Unicode.
+
+    Catches UnicodeEncodeError at the call site and retries with ASCII-safe
+    representations.  Supports all standard print() kwargs (file, sep, end).
+    """
+    # Always try reconfigure on first print
+    _sym('', '')
+    try:
+        import builtins; builtins.print(*args, **kwargs)
+    except UnicodeEncodeError:
+        dest = kwargs.pop('file', sys.stdout)
+        enc = getattr(dest, 'encoding', None) or 'utf-8'
+        safe_args = []
+        for arg in args:
+            s = str(arg)
+            safe_args.append(
+                s.encode(enc, errors='replace')
+                 .decode(enc)
+            )
+        import builtins; builtins.print(*safe_args, file=dest, **kwargs)
 
 # ---------------------------------------------------------------------------
 # 数据点提取：从 Markdown 报告中识别财务数字
@@ -274,12 +322,12 @@ def render_verdict(results: list, report_name: str = "") -> dict:
     YELLOW = '\033[93m'
     RESET = '\033[0m'
 
-    print('=' * 70)
-    print(f'{BOLD}报告数据抽检 — 准出/打回判决{RESET}')
+    _p('=' * 70)
+    _p(f'{BOLD}报告数据抽检 — 准出/打回判决{RESET}')
     if report_name:
-        print(f'报告：{report_name}')
-    print('=' * 70)
-    print()
+        _p(f'报告：{report_name}')
+    _p('=' * 70)
+    _p()
 
     fail_items = []
     warn_items = []
@@ -296,7 +344,7 @@ def render_verdict(results: list, report_name: str = "") -> dict:
         # --- 主来源比对 ---
         if fetched is None:
             # 没有提供核验值 → 跳过（不计入通过/失败）
-            print(f'  ⬜ [{item["id"]:>2}] {label[:35]:35s} {reported:>12.2f} {unit}  →  [未提供核验值，跳过]')
+            _p(f'  [SKIP] [{item["id"]:>2}] {label[:35]:35s} {reported:>12.2f} {unit}  →  [未提供核验值，跳过]')
             continue
 
         fetched = float(fetched)
@@ -313,12 +361,12 @@ def render_verdict(results: list, report_name: str = "") -> dict:
         pass2 = (diff2 is None) or (diff2 <= _TOLERANCE)
 
         if pass1 and pass2:
-            status = f'{GREEN}✅ 通过{RESET}'
+            status = f'{GREEN}[OK] 通过{RESET}'
             detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
             if diff2 is not None:
                 detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
         elif not pass1 and not pass2:
-            status = f'{RED}❌ 不通过{RESET}'
+            status = f'{RED}[FAIL] 不通过{RESET}'
             detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
             if diff2 is not None:
                 detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
@@ -338,7 +386,7 @@ def render_verdict(results: list, report_name: str = "") -> dict:
             })
         else:
             # 一个来源通过，一个不通过 → 警告，不计入失败
-            status = f'{YELLOW}⚠️  警告{RESET}'
+            status = f'{YELLOW}[WARN]  警告{RESET}'
             detail = f'{source}: {fetched:.2f} (偏差 {diff1*100:.2f}%)'
             if diff2 is not None:
                 detail += f'  |  {source2}: {fetched2:.2f} (偏差 {diff2*100:.2f}%)'
@@ -349,43 +397,43 @@ def render_verdict(results: list, report_name: str = "") -> dict:
                 'diff2_pct': round(diff2 * 100, 2) if diff2 is not None else None,
             })
 
-        print(f'  {status} [{item["id"]:>2}] {label[:35]:35s}  报告: {reported:>12.2f} {unit}')
-        print(f'              {" " * 38}{detail}')
+        _p(f'  {status} [{item["id"]:>2}] {label[:35]:35s}  报告: {reported:>12.2f} {unit}')
+        _p(f'              {" " * 38}{detail}')
 
-    print()
-    print('-' * 70)
+    _p()
+    _p('-' * 70)
 
     total = len([r for r in results if r.get('fetched_value') is not None])
     fail_count = len(fail_items)
     warn_count = len(warn_items)
     pass_count = total - fail_count - warn_count
 
-    print(f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}')
-    print()
+    _p(f'  抽检总数: {total}  |  通过: {GREEN}{pass_count}{RESET}  |  警告: {YELLOW}{warn_count}{RESET}  |  不通过: {RED}{fail_count}{RESET}')
+    _p()
 
     if fail_count == 0:
-        print(f'{BOLD}{GREEN}【准出】所有抽检数据通过，报告可发布。{RESET}')
+        _p(f'{BOLD}{GREEN}【准出】所有抽检数据通过，报告可发布。{RESET}')
         verdict = 'PASS'
     else:
-        print(f'{BOLD}{RED}【打回】{fail_count} 个数据点核验不通过，报告需修正后重审。{RESET}')
-        print()
-        print(f'{BOLD}打回原因：{RESET}')
+        _p(f'{BOLD}{RED}【打回】{fail_count} 个数据点核验不通过，报告需修正后重审。{RESET}')
+        _p()
+        _p(f'{BOLD}打回原因：{RESET}')
         for fi in fail_items:
-            print(f'  ❌ 第 {fi["line_number"]} 行 | {fi["label"]}')
-            print(f'     报告值：{fi["reported"]} {fi["unit"]}')
-            print(f'     {fi["source"]}：{fi["fetched"]}  （偏差 {fi["diff1_pct"]}%）')
+            _p(f'  [FAIL] 第 {fi["line_number"]} 行 | {fi["label"]}')
+            _p(f'     报告值：{fi["reported"]} {fi["unit"]}')
+            _p(f'     {fi["source"]}：{fi["fetched"]}  （偏差 {fi["diff1_pct"]}%）')
             if fi.get('fetched2') is not None:
-                print(f'     {fi["source2"]}：{fi["fetched2"]}  （偏差 {fi["diff2_pct"]}%）')
-            print(f'     原文：{fi["raw_text"][:80]}')
-            print()
+                _p(f'     {fi["source2"]}：{fi["fetched2"]}  （偏差 {fi["diff2_pct"]}%）')
+            _p(f'     原文：{fi["raw_text"][:80]}')
+            _p()
         verdict = 'FAIL'
 
     if warn_count > 0:
-        print(f'{YELLOW}注意：{warn_count} 个数据点两来源结果不一致（超过1%），可能是口径差异（GAAP/Non-GAAP或汇率），请人工复核。{RESET}')
+        _p(f'{YELLOW}注意：{warn_count} 个数据点两来源结果不一致（超过1%），可能是口径差异（GAAP/Non-GAAP或汇率），请人工复核。{RESET}')
         for wi in warn_items:
-            print(f'  ⚠️  {wi["label"]}  报告:{wi["reported"]} {wi["unit"]}  偏差: {wi["diff1_pct"]}% / {wi["diff2_pct"]}%')
+            _p(f'  [WARN]  {wi["label"]}  报告:{wi["reported"]} {wi["unit"]}  偏差: {wi["diff1_pct"]}% / {wi["diff2_pct"]}%')
 
-    print('=' * 70)
+    _p('=' * 70)
 
     return {
         'verdict': verdict,
@@ -450,7 +498,7 @@ def main():
 
     if args.command == 'extract':
         if not os.path.exists(args.report):
-            print(f'❌ 文件不存在: {args.report}', file=sys.stderr)
+            _p(f'[FAIL] 文件不存在: {args.report}', file=sys.stderr)
             sys.exit(1)
 
         with open(args.report, 'r', encoding='utf-8') as f:
@@ -459,24 +507,24 @@ def main():
         all_points = extract_data_points(text)
         sampled = sample_points(all_points, ratio=args.ratio, seed=args.seed)
 
-        print('=' * 70)
-        print(f'报告数据抽检清单')
-        print(f'文件：{args.report}')
-        print(f'总提取数据点：{len(all_points)}  |  抽样比例：{args.ratio:.0%}  |  抽检数量：{len(sampled)}')
+        _p('=' * 70)
+        _p(f'报告数据抽检清单')
+        _p(f'文件：{args.report}')
+        _p(f'总提取数据点：{len(all_points)}  |  抽样比例：{args.ratio:.0%}  |  抽检数量：{len(sampled)}')
         if args.seed is not None:
-            print(f'随机种子：{args.seed}（可用于复现同一批样本）')
-        print('=' * 70)
-        print()
-        print(f'{"ID":>3}  {"行号":>5}  {"数据标签":<35}  {"报告值":>12}  {"单位"}')
-        print(f'{"─"*3}  {"─"*5}  {"─"*35}  {"─"*12}  {"─"*6}')
+            _p(f'随机种子：{args.seed}（可用于复现同一批样本）')
+        _p('=' * 70)
+        _p()
+        _p(f'{"ID":>3}  {"行号":>5}  {"数据标签":<35}  {"报告值":>12}  {"单位"}')
+        _p(f'{"─"*3}  {"─"*5}  {"─"*35}  {"─"*12}  {"─"*6}')
         for p in sampled:
-            print(f'{p["id"]:>3}  {p["line_number"]:>5}  {p["label"][:35]:<35}  {p["reported_value"]:>12.2f}  {p["unit"]}')
-        print()
-        print('↑ 请对上述每个数据点，从以下信源取数，填入 fetched_value：')
-        print('  美股：macrotrends.net（主）+ stockanalysis.com（副）')
-        print('  港股：aastocks.com（主）+ macrotrends ADR（副）')
-        print('  A股： eastmoney.com（主）+ cninfo.com.cn（副）')
-        print()
+            _p(f'{p["id"]:>3}  {p["line_number"]:>5}  {p["label"][:35]:<35}  {p["reported_value"]:>12.2f}  {p["unit"]}')
+        _p()
+        _p('↑ 请对上述每个数据点，从以下信源取数，填入 fetched_value：')
+        _p('  美股：macrotrends.net（主）+ stockanalysis.com（副）')
+        _p('  港股：aastocks.com（主）+ macrotrends ADR（副）')
+        _p('  A股： eastmoney.com（主）+ cninfo.com.cn（副）')
+        _p()
 
         if not args.dry_run:
             # 输出可填写的 JSON 模板
@@ -494,22 +542,22 @@ def main():
                     'fetched_value2': None,      # ← 填入副来源核验值（可选）
                     'fetched_source2': '',       # ← 填入副来源名称（可选）
                 })
-            print('抽检清单 JSON（填入 fetched_value 后，传给 verdict 命令）：')
-            print()
-            print(json.dumps(template, ensure_ascii=False, indent=2))
+            _p('抽检清单 JSON（填入 fetched_value 后，传给 verdict 命令）：')
+            _p()
+            _p(json.dumps(template, ensure_ascii=False, indent=2))
 
     elif args.command == 'verdict':
         try:
             results = json.loads(args.results)
         except json.JSONDecodeError as e:
-            print(f'❌ JSON 解析失败: {e}', file=sys.stderr)
+            _p(f'[FAIL] JSON 解析失败: {e}', file=sys.stderr)
             sys.exit(1)
 
         report_name = args.report or ''
         outcome = render_verdict(results, report_name=report_name)
 
         if args.output_json:
-            print(json.dumps(outcome, ensure_ascii=False, indent=2))
+            _p(json.dumps(outcome, ensure_ascii=False, indent=2))
 
         # 非零退出码表示打回，方便 CI/脚本判断
         sys.exit(0 if outcome['verdict'] == 'PASS' else 1)

@@ -22,6 +22,34 @@ import sys
 from decimal import Decimal, Context, ROUND_HALF_EVEN, InvalidOperation
 
 # ---------------------------------------------------------------------------
+# Console-safe output for Windows GBK terminals
+# ---------------------------------------------------------------------------
+
+_ENC_OK = True
+
+
+def _p(*args, **kwargs):
+    """Print with UnicodeEncodeError fallback for Windows GBK terminals."""
+    global _ENC_OK
+    if _ENC_OK:
+        try:
+            if hasattr(sys.stdout, 'reconfigure'):
+                sys.stdout.reconfigure(encoding='utf-8')
+        except (AttributeError, ValueError, OSError):
+            pass
+        _ENC_OK = False
+    try:
+        import builtins; builtins.print(*args, **kwargs)
+    except UnicodeEncodeError:
+        dest = kwargs.pop('file', sys.stdout)
+        enc = getattr(dest, 'encoding', None) or 'utf-8'
+        safe_args = []
+        for arg in args:
+            s = str(arg)
+            safe_args.append(s.encode(enc, errors='replace').decode(enc))
+        import builtins; builtins.print(*safe_args, file=dest, **kwargs)
+
+# ---------------------------------------------------------------------------
 # Exact Decimal Engine (no floating-point drift)
 # ---------------------------------------------------------------------------
 
@@ -67,27 +95,27 @@ def verify_market_cap(price, shares, reported_cap, currency=""):
     calculated = _CTX.multiply(p, s)
     deviation = abs(float(calculated - r) / float(r)) * 100 if r != 0 else 0
 
-    print("=" * 60)
-    print("市值验算 (Market Cap Verification)")
-    print("=" * 60)
-    print(f"  股价 (Price):       {p} {currency}")
-    print(f"  总股本 (Shares):    {fmt_number(s)}")
-    print(f"  计算市值:           {fmt_number(calculated)} {currency}")
-    print(f"  报告市值:           {fmt_number(r)} {currency}")
-    print(f"  偏差:               {deviation:.2f}%")
-    print()
+    _p("=" * 60)
+    _p("市值验算 (Market Cap Verification)")
+    _p("=" * 60)
+    _p(f"  股价 (Price):       {p} {currency}")
+    _p(f"  总股本 (Shares):    {fmt_number(s)}")
+    _p(f"  计算市值:           {fmt_number(calculated)} {currency}")
+    _p(f"  报告市值:           {fmt_number(r)} {currency}")
+    _p(f"  偏差:               {deviation:.2f}%")
+    _p()
 
     if deviation > 5:
-        print(f"  ❌ 警告: 偏差 {deviation:.1f}% > 5%, 请检查:")
-        print(f"     - 股本是否为最新（回购/增发）?")
-        print(f"     - 单位是否一致（港币 vs 人民币 vs 美元）?")
-        print(f"     - 股价是否为最新?")
+        _p(f"  [FAIL] 警告: 偏差 {deviation:.1f}% > 5%, 请检查:")
+        _p(f"     - 股本是否为最新（回购/增发）?")
+        _p(f"     - 单位是否一致（港币 vs 人民币 vs 美元）?")
+        _p(f"     - 股价是否为最新?")
         return False
     elif deviation > 1:
-        print(f"  ⚠️  偏差 {deviation:.1f}% 在可接受范围, 可能因股价波动/股本变化")
+        _p(f"  [WARN]  偏差 {deviation:.1f}% 在可接受范围, 可能因股价波动/股本变化")
         return True
     else:
-        print(f"  ✅ 验证通过, 偏差仅 {deviation:.2f}%")
+        _p(f"  [OK] 验证通过, 偏差仅 {deviation:.2f}%")
         return True
 
 
@@ -100,11 +128,11 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
     """Calculate and verify key valuation ratios from raw inputs."""
     p = exact(price)
 
-    print("=" * 60)
-    print("估值指标验算 (Valuation Verification)")
-    print("=" * 60)
-    print(f"  当前股价: {p}")
-    print()
+    _p("=" * 60)
+    _p("估值指标验算 (Valuation Verification)")
+    _p("=" * 60)
+    _p(f"  当前股价: {p}")
+    _p()
 
     results = {}
 
@@ -112,23 +140,23 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
         e = exact(eps)
         if e != 0:
             pe = _CTX.divide(p, e)
-            print(f"  PE (TTM):  {p} / {e} = {pe:.2f}x")
+            _p(f"  PE (TTM):  {p} / {e} = {pe:.2f}x")
             results["PE"] = float(pe)
             # Earnings yield
             ey = _CTX.divide(e, p) * 100
-            print(f"  盈利收益率: {ey:.2f}%")
+            _p(f"  盈利收益率: {ey:.2f}%")
         else:
-            print(f"  PE: EPS为0, 无法计算")
+            _p(f"  PE: EPS为0, 无法计算")
 
     if bvps is not None:
         b = exact(bvps)
         if b != 0:
             pb = _CTX.divide(p, b)
-            print(f"  PB:        {p} / {b} = {pb:.2f}x")
+            _p(f"  PB:        {p} / {b} = {pb:.2f}x")
             results["PB"] = float(pb)
             if eps is not None and float(exact(eps)) != 0:
                 roe = _CTX.divide(exact(eps), b) * 100
-                print(f"  ROE:       {exact(eps)} / {b} = {roe:.2f}%")
+                _p(f"  ROE:       {exact(eps)} / {b} = {roe:.2f}%")
                 results["ROE"] = float(roe)
 
     if fcf_per_share is not None:
@@ -136,8 +164,8 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
         if f != 0:
             fcf_yield = _CTX.divide(f, p) * 100
             pfcf = _CTX.divide(p, f)
-            print(f"  P/FCF:     {p} / {f} = {pfcf:.2f}x")
-            print(f"  FCF Yield: {fcf_yield:.2f}%")
+            _p(f"  P/FCF:     {p} / {f} = {pfcf:.2f}x")
+            _p(f"  FCF Yield: {fcf_yield:.2f}%")
             results["P_FCF"] = float(pfcf)
             results["FCF_Yield"] = float(fcf_yield)
 
@@ -145,18 +173,18 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
         d = exact(dividend)
         if p != 0:
             div_yield = _CTX.divide(d, p) * 100
-            print(f"  股息率:    {d} / {p} = {div_yield:.2f}%")
+            _p(f"  股息率:    {d} / {p} = {div_yield:.2f}%")
             results["Dividend_Yield"] = float(div_yield)
 
     if revenue_per_share is not None:
         r = exact(revenue_per_share)
         if r != 0:
             ps = _CTX.divide(p, r)
-            print(f"  PS:        {p} / {r} = {ps:.2f}x")
+            _p(f"  PS:        {p} / {r} = {ps:.2f}x")
             results["PS"] = float(ps)
 
-    print()
-    print("  ✅ 以上指标均使用精确十进制计算, 无浮点误差")
+    _p()
+    _p("  [OK] 以上指标均使用精确十进制计算, 无浮点误差")
     return results
 
 
@@ -166,9 +194,9 @@ def verify_valuation(price, eps=None, bvps=None, fcf_per_share=None,
 
 def cross_validate(field_name, source_values: dict, unit="", tolerance_pct=2.0):
     """Compare a data point across multiple sources, flag discrepancies."""
-    print("=" * 60)
-    print(f"交叉验证: {field_name} (Cross-Validation)")
-    print("=" * 60)
+    _p("=" * 60)
+    _p(f"交叉验证: {field_name} (Cross-Validation)")
+    _p("=" * 60)
 
     values = {k: exact(v) for k, v in source_values.items()}
     sources = list(values.keys())
@@ -179,28 +207,28 @@ def cross_validate(field_name, source_values: dict, unit="", tolerance_pct=2.0):
     n = len(sorted_vals)
     median = sorted_vals[n // 2] if n % 2 == 1 else (sorted_vals[n//2-1] + sorted_vals[n//2]) / 2
 
-    print(f"  数据来源数: {len(sources)}")
-    print(f"  参考中位数: {fmt_number(exact(median))} {unit}")
-    print()
+    _p(f"  数据来源数: {len(sources)}")
+    _p(f"  参考中位数: {fmt_number(exact(median))} {unit}")
+    _p()
 
     all_ok = True
     for src, val in values.items():
         dev = abs(float(val) - median) / median * 100 if median != 0 else 0
-        status = "✅" if dev <= tolerance_pct else "❌"
+        status = "[OK]" if dev <= tolerance_pct else "[FAIL]"
         if dev > tolerance_pct:
             all_ok = False
-        print(f"  {status} {src:20s}: {fmt_number(val)} {unit}  (偏差 {dev:.2f}%)")
+        _p(f"  {status} {src:20s}: {fmt_number(val)} {unit}  (偏差 {dev:.2f}%)")
 
-    print()
+    _p()
     if all_ok:
-        print(f"  ✅ 所有来源偏差 ≤ {tolerance_pct}%, 数据一致")
+        _p(f"  [OK] 所有来源偏差 ≤ {tolerance_pct}%, 数据一致")
     else:
-        print(f"  ⚠️  存在来源偏差 > {tolerance_pct}%, 请核实差异原因")
-        print(f"     建议: 优先采用公司年报/交易所数据")
+        _p(f"  [WARN]  存在来源偏差 > {tolerance_pct}%, 请核实差异原因")
+        _p(f"     建议: 优先采用公司年报/交易所数据")
 
     # Consensus value
     consensus = median
-    print(f"\n  共识值 (加权中位数): {fmt_number(exact(consensus))} {unit}")
+    _p(f"\n  共识值 (加权中位数): {fmt_number(exact(consensus))} {unit}")
     return {"consensus": consensus, "all_consistent": all_ok}
 
 
@@ -213,9 +241,9 @@ _BENFORD = {d: math.log10(1 + 1/d) for d in range(1, 10)}
 
 def benford_check(values: list):
     """Quick Benford's Law check on a list of financial values."""
-    print("=" * 60)
-    print("Benford定律检测 (Financial Data Fabrication Check)")
-    print("=" * 60)
+    _p("=" * 60)
+    _p("Benford定律检测 (Financial Data Fabrication Check)")
+    _p("=" * 60)
 
     # Extract leading digits
     digits = []
@@ -229,7 +257,7 @@ def benford_check(values: list):
 
     n = len(digits)
     if n < 50:
-        print(f"  ⚠️  样本量不足: {n} < 50, Benford分析不可靠")
+        _p(f"  [WARN]  样本量不足: {n} < 50, Benford分析不可靠")
         return None
 
     # Observed distribution
@@ -252,31 +280,31 @@ def benford_check(values: list):
     elif mad < 0.015:
         conformity = "Marginally Acceptable (边缘)"
     else:
-        conformity = "Nonconforming (不符合 ⚠️)"
+        conformity = "Nonconforming (不符合 [WARN])"
 
-    print(f"  样本量:    {n}")
-    print(f"  MAD:       {mad:.6f}")
-    print(f"  Chi-sq:    {chi2:.2f}")
-    print(f"  符合度:    {conformity}")
-    print()
+    _p(f"  样本量:    {n}")
+    _p(f"  MAD:       {mad:.6f}")
+    _p(f"  Chi-sq:    {chi2:.2f}")
+    _p(f"  符合度:    {conformity}")
+    _p()
 
     # Digit distribution table
-    print(f"  {'首位数':>6} {'观测':>8} {'Benford期望':>12} {'偏差':>8}")
-    print(f"  {'-'*6} {'-'*8} {'-'*12} {'-'*8}")
+    _p(f"  {'首位数':>6} {'观测':>8} {'Benford期望':>12} {'偏差':>8}")
+    _p(f"  {'-'*6} {'-'*8} {'-'*12} {'-'*8}")
     for d in range(1, 10):
         obs = observed.get(d, 0)
         exp = _BENFORD[d]
         dev = obs - exp
-        flag = " ⚠️" if abs(dev) > 0.03 else ""
-        print(f"  {d:>6d} {obs:>8.3f} {exp:>12.3f} {dev:>+8.3f}{flag}")
+        flag = " [WARN]" if abs(dev) > 0.03 else ""
+        _p(f"  {d:>6d} {obs:>8.3f} {exp:>12.3f} {dev:>+8.3f}{flag}")
 
-    print()
+    _p()
     is_ok = mad < 0.015
     if is_ok:
-        print("  ✅ 数据首位数字分布符合Benford定律")
+        _p("  [OK] 数据首位数字分布符合Benford定律")
     else:
-        print("  ❌ 数据首位数字分布异常, 可能存在人为调整")
-        print("     提示: 不符合Benford定律不一定是造假, 但值得进一步调查")
+        _p("  [FAIL] 数据首位数字分布异常, 可能存在人为调整")
+        _p("     提示: 不符合Benford定律不一定是造假, 但值得进一步调查")
 
     return {"mad": mad, "chi2": chi2, "conformity": conformity, "is_conforming": is_ok}
 
@@ -290,26 +318,26 @@ def exact_calc(expr: str):
 
     Supports: +, -, *, /, (), numbers (including scientific notation).
     """
-    print("=" * 60)
-    print("精确计算 (Exact Calculator)")
-    print("=" * 60)
+    _p("=" * 60)
+    _p("精确计算 (Exact Calculator)")
+    _p("=" * 60)
 
     # Safe evaluation: only allow numbers and arithmetic
     allowed = set("0123456789.+-*/() eE")
     if not all(c in allowed for c in expr.replace(" ", "")):
-        print(f"  ❌ 不安全的表达式: {expr}")
+        _p(f"  [FAIL] 不安全的表达式: {expr}")
         return None
 
     try:
         # Replace scientific notation for Decimal compatibility
         result = eval(expr, {"__builtins__": {}}, {})
         d_result = exact(result)
-        print(f"  表达式: {expr}")
-        print(f"  结果:   {fmt_number(d_result)}")
-        print(f"  精确值: {d_result}")
+        _p(f"  表达式: {expr}")
+        _p(f"  结果:   {fmt_number(d_result)}")
+        _p(f"  精确值: {d_result}")
         return float(d_result)
     except Exception as e:
-        print(f"  ❌ 计算错误: {e}")
+        _p(f"  [FAIL] 计算错误: {e}")
         return None
 
 
@@ -322,9 +350,9 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
                              pe_optimistic, pe_neutral, pe_pessimistic,
                              years=3, currency=""):
     """Calculate three-scenario target prices with exact arithmetic."""
-    print("=" * 60)
-    print("三情景估值模型 (Three-Scenario Valuation)")
-    print("=" * 60)
+    _p("=" * 60)
+    _p("三情景估值模型 (Three-Scenario Valuation)")
+    _p("=" * 60)
 
     p = exact(current_price)
     eps = exact(current_eps)
@@ -336,12 +364,12 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
         ("悲观 (Bear)", growth_pessimistic, pe_pessimistic),
     ]
 
-    print(f"  当前股价: {p} {currency}")
-    print(f"  当前EPS:  {eps}")
-    print(f"  预测期:   {years}年")
-    print()
-    print(f"  {'情景':12} {'年增速':>8} {'目标PE':>8} {'目标EPS':>10} {'目标股价':>10} {'涨跌幅':>8}")
-    print(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*8}")
+    _p(f"  当前股价: {p} {currency}")
+    _p(f"  当前EPS:  {eps}")
+    _p(f"  预测期:   {years}年")
+    _p()
+    _p(f"  {'情景':12} {'年增速':>8} {'目标PE':>8} {'目标EPS':>10} {'目标股价':>10} {'涨跌幅':>8}")
+    _p(f"  {'-'*12} {'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*8}")
 
     for name, growth, pe in scenarios:
         g = exact(growth)
@@ -353,11 +381,11 @@ def three_scenario_valuation(current_price, current_eps, shares_billion,
         target_price = _CTX.multiply(future_eps, target_pe)
         change = float(target_price - p) / float(p) * 100
 
-        print(f"  {name:12} {float(g)*100:>7.0f}% {float(target_pe):>7.0f}x "
+        _p(f"  {name:12} {float(g)*100:>7.0f}% {float(target_pe):>7.0f}x "
               f"{float(future_eps):>10.2f} {float(target_price):>9.1f} {change:>+7.1f}%")
 
-    print()
-    print("  ✅ 所有计算使用精确十进制, 结果可审计复现")
+    _p()
+    _p("  [OK] 所有计算使用精确十进制, 结果可审计复现")
 
 
 # ---------------------------------------------------------------------------
