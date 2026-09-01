@@ -199,6 +199,7 @@ AI Berkshire 确保：**同样的输入 → 结构一致、深度一致的输出
 | [`/industry-funnel`](skills/industry-funnel.md) | 行业漏斗筛选 | 全市场 → 粗筛 ≤10 家 → 终选 3 家深度分析 |
 | [`/quality-screen`](skills/quality-screen.md) | 去劣筛选（7条硬指标） | 快速排除非一流公司，支持个股/行业/指数/主题批量筛 |
 | [`/bottleneck-hunter`](skills/bottleneck-hunter.md) | 供应链瓶颈猎手 | 从超级趋势出发，寻找产业链物理瓶颈和套利机会 |
+| [`/era-alpha`](skills/era-alpha.md) | 时代α捕手 | 识别时代级高增长主线中的核心α，验证增长可持续性，给出介入与退出纪律 |
 | [`/investment-checklist`](skills/investment-checklist.md) | 巴菲特买入前 Checklist | 六关快速筛选，10分钟决定是否值得深入 |
 
 ### 📈 持仓管理类
@@ -218,6 +219,12 @@ AI Berkshire 确保：**同样的输入 → 结构一致、深度一致的输出
 | [`/dyp-ask`](skills/dyp-ask.md) | 段永平问答 | 以段永平的方式思考任何问题——商业、投资、人生 |
 | [`/financial-data`](skills/financial-data.md) | 财务数据获取与交叉验证规范 | 确保关键数据来自2个独立来源，误差>1%告警 |
 | [`/wechat-article`](skills/wechat-article.md) | 微信公众号文章 | 作者、编辑、读者三Agent协作，产出可发布文章 |
+
+### 🔗 搭配 Claude Code 内置的 /deep-research
+
+除以上 20 个 skill 外，Claude Code 自带一个 `/deep-research` 深度研究编排器（内置于客户端，不由本仓库分发，安装 Claude Code 即可使用）。它的流程是：把问题拆成 5 个检索角度并行搜索 → 抓取来源、提取可证伪论断 → 每条论断由 3 个独立 Agent 对抗验证（3 票中 2 票证伪才剔除）→ 按置信度合成带引用来源的报告。核心价值是每条结论都被人试图推翻过，而不是搜到什么写什么。
+
+适合在运行本仓库的个股/行业 skill 之前，先对一个关键事实判断做独立核查。实战示例：[存储涨价周期研究](reports/存储行业/存储涨价周期研究-还能维持几年高价-20260727.md)（106 个检索/验证 Agent，23 条论断三票制交叉验证）、[diffusion LLM 技术路线综述](reports/大模型技术/diffusion-LLM技术路线综述-与AR对比-20260706.md)（25 条论断验证，22 条确认、3 条被证伪）。
 
 ---
 
@@ -648,6 +655,7 @@ REM 可选：安装 Codex slash prompts
 | 腾讯控股 (0700.HK) | `/investment-research` | 社交垄断+资本配置卓越，14x前瞻PE合理偏低 | [查看报告](reports/腾讯/) |
 | 7家公司对比 | `/investment-checklist` | 茅台、腾讯通过；英伟达、美团、快手有条件通过；拼多多、泡泡玛特灰色 | [查看报告](reports/多公司对比-checklist-20260408.md) |
 | 大师持仓追踪 | 自定义研究 | 巴菲特/李录/段永平最新13F持仓+PDD成本分析 | [查看报告](reports/大师持仓追踪-research-20260408.md) |
+| 折扣零售产业链 | `/industry-research` | 逻辑链6环中2环已证伪（尾货供给枯竭、线上量价齐升）；最佳环节是奥莱物业与消费REITs而非线上特卖平台 | [查看报告](reports/折扣零售产业链/) |
 
 > *更多报告将持续添加。欢迎 PR 提交你用本框架生成的研究报告。*
 
