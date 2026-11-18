@@ -42,3 +42,12 @@ reports/portfolio-latest.md
 
 # 阅读站点构建产物（由 tools/build_site.py 生成）
 site/
+
+# 报告
+/reports/
+
+# codex skills
+/codex-skills/
+/codex-prompts/
+
+.playwrite-mcp/
